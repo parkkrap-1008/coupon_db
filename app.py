@@ -1,6 +1,3 @@
-[connections.gsheets]
-type = "sheets"
-spreadsheet = "https://docs.google.com/spreadsheets/d/https://docs.google.com/spreadsheets/d/10P_7MrRgFSH9s4ro00e_OKoePn8-aD-_5pIrhDydsTE/edit?usp=sharing/edit"
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
