@@ -197,12 +197,10 @@ elif st.session_state.page == "admin":
         st.subheader("⚡ 기본 프리셋 발급")
         st.caption("아래에서 유효기간을 먼저 선택하고 버튼을 누르세요.")
         
-        # 💡 빠른 발급용 유효기간 설정 추가
         quick_expire_option = st.radio("빠른 발급 유효기간 설정", ["1개월", "3개월", "6개월", "직접 설정"], horizontal=True, key="quick_expire")
         quick_custom_date = st.date_input("직접 설정 (위에서 '직접 설정' 선택 시 적용)", key="quick_custom")
-        st.write("") # 간격 띄우기
+        st.write("") 
         
-        # 💡 에러의 주범이었던 이름표("이름":) 완벽하게 추가 완료!
         presets = [
             {"이름": "🍽️ 원하는 메뉴 먹어주기", "혜택": "상대방이 원하는 메뉴 군말 없이 같이 먹어주기"},
             {"이름": "🧃 음료수 사주기", "혜택": "원하는 음료수 사다 바치기"},
@@ -215,7 +213,6 @@ elif st.session_state.page == "admin":
                 if active_count >= 10:
                     st.error("쿠폰함이 가득 찼습니다!")
                 else:
-                    # 선택한 유효기간 계산 적용
                     now = datetime.now()
                     if quick_expire_option == "1개월":
                         expire_date = now + pd.DateOffset(months=1)
@@ -243,7 +240,6 @@ elif st.session_state.page == "admin":
 
         st.divider()
         
-        # 과거 내역 재발급 (여기에도 설정한 유효기간 적용됨)
         st.subheader("♻️ 과거에 쓴 쿠폰 다시 발급하기")
         st.caption("예전에 썼던 쿠폰을 위에서 선택한 유효기간으로 다시 살려냅니다.")
         
