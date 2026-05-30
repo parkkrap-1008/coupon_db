@@ -51,12 +51,12 @@ if st.session_state.page == "selection":
     
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("👧 지현 지갑 보기", use_container_width=True, type="primary"):
+        if st.button("👦 지현 지갑 보기", use_container_width=True, type="primary"):
             st.session_state.selected_user = "지현"
             st.session_state.page = "wallet"
             st.rerun()
     with col2:
-        if st.button("👦 세연 지갑 보기", use_container_width=True, type="primary"):
+        if st.button("👧 세연 지갑 보기", use_container_width=True, type="primary"):
             st.session_state.selected_user = "세연"
             st.session_state.page = "wallet"
             st.rerun()
@@ -67,7 +67,7 @@ if st.session_state.page == "selection":
     st.divider()
     col_left, col_right = st.columns([4, 1])
     with col_right:
-        if st.button("⚙️ 쿠폰 통합 관리", size="small"):
+        if st.button("⚙️ 쿠폰 통합 관리"):
             st.session_state.page = "admin"
             st.rerun()
 
