@@ -115,7 +115,7 @@ elif st.session_state.page == "wallet":
                     if row["상태"] == "미사용":
                         st.success("🟢 미사용")
                     else:
-                        st.secondary_button("🔴 사용완료", disabled=True, key=f"btn_{index}") 
+                        st.button("🔴 사용완료", disabled=True, key=f"btn_{index}") 
                 with col3:
                     if row["상태"] == "미사용":
                         if st.button("사용하기", key=f"use_{index}", type="primary"):
