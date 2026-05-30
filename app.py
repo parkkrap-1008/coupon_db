@@ -58,12 +58,14 @@ if st.session_state.page == "selection":
     
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("👧 지현 지갑 보기", use_container_width=True, type="primary"):
+        # 이모티콘 변경 (👦 지현)
+        if st.button("👦 지현 지갑 보기", use_container_width=True, type="primary"):
             st.session_state.selected_user = "지현"
             st.session_state.page = "wallet"
             st.rerun()
     with col2:
-        if st.button("👦 세연 지갑 보기", use_container_width=True, type="primary"):
+        # 이모티콘 변경 (👧 세연)
+        if st.button("👧 세연 지갑 보기", use_container_width=True, type="primary"):
             st.session_state.selected_user = "세연"
             st.session_state.page = "wallet"
             st.rerun()
@@ -90,7 +92,6 @@ elif st.session_state.page == "wallet":
         st.rerun()
         
     user_df = df[df["소유자"] == current_user]
-    # 미사용 쿠폰만 카운트
     active_count = len(user_df[user_df["상태"] == "미사용"])
 
     st.title(f"🎫 {current_user}의 쿠폰 지갑")
@@ -104,7 +105,6 @@ elif st.session_state.page == "wallet":
             with st.container(border=True):
                 col1, col2, col3 = st.columns([3, 2, 1])
                 
-                # 예전 데이터에 만료일이 없을 경우를 대비한 안전 장치
                 exp_date = row.get("만료일", "제한 없음")
                 if pd.isna(exp_date) or exp_date == "": 
                     exp_date = "제한 없음"
@@ -117,13 +117,13 @@ elif st.session_state.page == "wallet":
                     if row["상태"] == "미사용":
                         st.success("🟢 미사용")
                     else:
-                        st.secondary_button("🔴 사용완료", disabled=True, key=f"btn_{index}") # 회색 버튼처럼 보이게
+                        st.secondary_button("🔴 사용완료", disabled=True, key=f"btn_{index}") 
                 with col3:
                     if row["상태"] == "미사용":
                         if st.button("사용하기", key=f"use_{index}", type="primary"):
                             df.at[index, "상태"] = "사용완료"
                             conn.update(data=df)
-                            st.balloons() # 🎈 파티 효과 (풍선 애니메이션)
+                            st.balloons() 
                             st.rerun()
                     else:
                         if st.button("되돌리기", key=f"unuse_{index}"):
@@ -148,7 +148,6 @@ elif st.session_state.page == "admin":
     target_df = df[df["소유자"] == target_user]
     active_count = len(target_df[target_df["상태"] == "미사용"])
 
-    # 💡 탭(Tab) 기능으로 메뉴 깔끔하게 분리
     tab1, tab2, tab3 = st.tabs(["➕ 상세 발급", "⚡ 빠른 발급", "📜 사용 내역 & 삭제"])
 
     # --- 탭 1: 상세 설정 발급 ---
@@ -161,21 +160,21 @@ elif st.session_state.page == "admin":
                 new_name = st.text_input("쿠폰 이름")
                 new_benefit = st.text_input("쿠폰 혜택")
                 
-                expire_option = st.radio("유효기간 설정", ["3개월", "6개월", "1년", "직접 설정"], horizontal=True)
+                # 유효기간 옵션 변경: 1년 제거, 1개월 추가
+                expire_option = st.radio("유효기간 설정", ["1개월", "3개월", "6개월", "직접 설정"], horizontal=True)
                 custom_date = st.date_input("직접 설정 (위에서 '직접 설정' 선택 시 적용)")
                 
                 submitted = st.form_submit_button("발급하기")
                 
                 if submitted:
                     if new_name and new_benefit:
-                        # 유효기간 날짜 계산
                         now = datetime.now()
-                        if expire_option == "3개월":
+                        if expire_option == "1개월":
+                            expire_date = now + pd.DateOffset(months=1)
+                        elif expire_option == "3개월":
                             expire_date = now + pd.DateOffset(months=3)
                         elif expire_option == "6개월":
                             expire_date = now + pd.DateOffset(months=6)
-                        elif expire_option == "1년":
-                            expire_date = now + pd.DateOffset(years=1)
                         else:
                             expire_date = pd.to_datetime(custom_date)
                             
@@ -196,25 +195,25 @@ elif st.session_state.page == "admin":
                     else:
                         st.warning("이름과 혜택을 모두 적어주세요.")
 
-    # --- 탭 2: 빠른 발급 (원클릭) ---
+    # --- 탭 2: 빠른 발급 (원클릭 + 재발급) ---
     with tab2:
-        st.subheader("버튼 한 번으로 자주 쓰는 쿠폰 발급")
-        st.caption("기본 유효기간 3개월로 즉시 발급됩니다.")
+        st.subheader("⚡ 기본 프리셋 발급")
+        st.caption("기본 유효기간 1개월로 즉시 발급됩니다.")
         
-        # 💡 오타 수정 완료된 빠른 발급 프리셋!
+        # 맞춤형 새 프리셋 목록 적용
         presets = [
-            {"이름": "💆 안마 30분", "혜택": "원할 때 언제든 시원한 안마 30분"},
-            {"이름": "🍽️ 맛있는 밥 쏘기", "혜택": "먹고 싶은 메뉴로 맛있는 한 끼 사주기"},
-            {"이름": "☕ 커피 배달", "혜택": "원하는 커피 사다 바치기"},
-            {"이름": "🎬 영화 예매권", "혜택": "같이 보고 싶은 영화 쿨하게 예매해주기"}
+            {"이름": "🍽️ 원하는 메뉴 먹어주기", "혜택": "상대방이 원하는 메뉴 군말 없이 같이 먹어주기"},
+            {"🧃 음료수 사주기", "혜택": "원하는 음료수 사다 바치기"},
+            {"🛡️ 상대 쿠폰 방어", "혜택": "상대방이 쓰는 쿠폰 1회 무효화 하기 (절대 방어!)"},
+            {"🚗 집 데려다 주기", "혜택": "안전하고 편안하게 집까지 데려다 주기"}
         ]
         
         for p in presets:
-            if st.button(f"➕ {p['이름']} 발급하기", use_container_width=True):
+            if st.button(f"➕ {p['이름']} 발급", use_container_width=True):
                 if active_count >= 10:
                     st.error("쿠폰함이 가득 찼습니다!")
                 else:
-                    expire_str = (datetime.now() + pd.DateOffset(months=3)).strftime("%Y-%m-%d")
+                    expire_str = (datetime.now() + pd.DateOffset(months=1)).strftime("%Y-%m-%d")
                     new_row = {
                         "쿠폰명": p["이름"],
                         "혜택": p["혜택"],
@@ -228,6 +227,43 @@ elif st.session_state.page == "admin":
                     st.success(f"'{p['이름']}' 쿠폰이 빠른 발급되었습니다!")
                     st.rerun()
 
+        st.divider()
+        
+        # 새 기능: 과거 사용 내역에서 쏙 골라 재발급하기
+        st.subheader("♻️ 과거에 쓴 쿠폰 다시 발급하기")
+        st.caption("예전에 썼던 쿠폰을 그대로 다시 살려냅니다.")
+        
+        used_df = target_df[target_df["상태"] == "사용완료"]
+        
+        if used_df.empty:
+            st.info("아직 사용한 쿠폰이 없어 다시 발급할 내역이 없습니다.")
+        else:
+            # 중복된 이름의 쿠폰은 하나로 묶어서 보여주기
+            unique_used_df = used_df.drop_duplicates(subset=["쿠폰명"]).reset_index(drop=True)
+            
+            reissue_name = st.selectbox("다시 발급할 쿠폰 선택", unique_used_df["쿠폰명"].tolist())
+            
+            if st.button("♻️ 선택한 쿠폰 재발급", use_container_width=True, type="secondary"):
+                if active_count >= 10:
+                    st.error("쿠폰함이 가득 찼습니다!")
+                else:
+                    # 혜택 내용 찾아오기
+                    reissue_benefit = unique_used_df[unique_used_df["쿠폰명"] == reissue_name].iloc[0]["혜택"]
+                    expire_str = (datetime.now() + pd.DateOffset(months=1)).strftime("%Y-%m-%d")
+                    
+                    new_row = {
+                        "쿠폰명": reissue_name,
+                        "혜택": reissue_benefit,
+                        "상태": "미사용",
+                        "생성일": datetime.now().strftime("%Y-%m-%d"),
+                        "소유자": target_user,
+                        "만료일": expire_str
+                    }
+                    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                    conn.update(data=df)
+                    st.success(f"'{reissue_name}' 쿠폰이 다시 발급되었습니다!")
+                    st.rerun()
+
     # --- 탭 3: 사용 내역 및 삭제 ---
     with tab3:
         st.subheader("📜 사용 내역")
@@ -235,7 +271,6 @@ elif st.session_state.page == "admin":
         if used_df.empty:
             st.info("아직 사용한 쿠폰이 없습니다.")
         else:
-            # 사용 내역을 보기 쉬운 표 형태로 출력
             st.dataframe(used_df[["쿠폰명", "혜택", "생성일"]], use_container_width=True, hide_index=True)
             
         st.divider()
