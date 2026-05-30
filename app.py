@@ -58,13 +58,11 @@ if st.session_state.page == "selection":
     
     col1, col2 = st.columns(2)
     with col1:
-        # 이모티콘 변경 (👦 지현)
         if st.button("👦 지현 지갑 보기", use_container_width=True, type="primary"):
             st.session_state.selected_user = "지현"
             st.session_state.page = "wallet"
             st.rerun()
     with col2:
-        # 이모티콘 변경 (👧 세연)
         if st.button("👧 세연 지갑 보기", use_container_width=True, type="primary"):
             st.session_state.selected_user = "세연"
             st.session_state.page = "wallet"
@@ -160,7 +158,6 @@ elif st.session_state.page == "admin":
                 new_name = st.text_input("쿠폰 이름")
                 new_benefit = st.text_input("쿠폰 혜택")
                 
-                # 유효기간 옵션 변경: 1년 제거, 1개월 추가
                 expire_option = st.radio("유효기간 설정", ["1개월", "3개월", "6개월", "직접 설정"], horizontal=True)
                 custom_date = st.date_input("직접 설정 (위에서 '직접 설정' 선택 시 적용)")
                 
@@ -198,14 +195,19 @@ elif st.session_state.page == "admin":
     # --- 탭 2: 빠른 발급 (원클릭 + 재발급) ---
     with tab2:
         st.subheader("⚡ 기본 프리셋 발급")
-        st.caption("기본 유효기간 1개월로 즉시 발급됩니다.")
+        st.caption("아래에서 유효기간을 먼저 선택하고 버튼을 누르세요.")
         
-        # 맞춤형 새 프리셋 목록 적용
+        # 💡 빠른 발급용 유효기간 설정 추가
+        quick_expire_option = st.radio("빠른 발급 유효기간 설정", ["1개월", "3개월", "6개월", "직접 설정"], horizontal=True, key="quick_expire")
+        quick_custom_date = st.date_input("직접 설정 (위에서 '직접 설정' 선택 시 적용)", key="quick_custom")
+        st.write("") # 간격 띄우기
+        
+        # 💡 에러의 주범이었던 이름표("이름":) 완벽하게 추가 완료!
         presets = [
             {"이름": "🍽️ 원하는 메뉴 먹어주기", "혜택": "상대방이 원하는 메뉴 군말 없이 같이 먹어주기"},
-            {"🧃 음료수 사주기", "혜택": "원하는 음료수 사다 바치기"},
-            {"🛡️ 상대 쿠폰 방어", "혜택": "상대방이 쓰는 쿠폰 1회 무효화 하기 (절대 방어!)"},
-            {"🚗 집 데려다 주기", "혜택": "안전하고 편안하게 집까지 데려다 주기"}
+            {"이름": "🧃 음료수 사주기", "혜택": "원하는 음료수 사다 바치기"},
+            {"이름": "🛡️ 상대 쿠폰 방어", "혜택": "상대방이 쓰는 쿠폰 1회 무효화 하기 (절대 방어!)"},
+            {"이름": "🚗 집 데려다 주기", "혜택": "안전하고 편안하게 집까지 데려다 주기"}
         ]
         
         for p in presets:
@@ -213,55 +215,75 @@ elif st.session_state.page == "admin":
                 if active_count >= 10:
                     st.error("쿠폰함이 가득 찼습니다!")
                 else:
-                    expire_str = (datetime.now() + pd.DateOffset(months=1)).strftime("%Y-%m-%d")
+                    # 선택한 유효기간 계산 적용
+                    now = datetime.now()
+                    if quick_expire_option == "1개월":
+                        expire_date = now + pd.DateOffset(months=1)
+                    elif quick_expire_option == "3개월":
+                        expire_date = now + pd.DateOffset(months=3)
+                    elif quick_expire_option == "6개월":
+                        expire_date = now + pd.DateOffset(months=6)
+                    else:
+                        expire_date = pd.to_datetime(quick_custom_date)
+                        
+                    expire_str = expire_date.strftime("%Y-%m-%d")
+                    
                     new_row = {
                         "쿠폰명": p["이름"],
                         "혜택": p["혜택"],
                         "상태": "미사용",
-                        "생성일": datetime.now().strftime("%Y-%m-%d"),
+                        "생성일": now.strftime("%Y-%m-%d"),
                         "소유자": target_user,
                         "만료일": expire_str
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                     conn.update(data=df)
-                    st.success(f"'{p['이름']}' 쿠폰이 빠른 발급되었습니다!")
+                    st.success(f"'{p['이름']}' 쿠폰이 빠른 발급되었습니다! (만료일: {expire_str})")
                     st.rerun()
 
         st.divider()
         
-        # 새 기능: 과거 사용 내역에서 쏙 골라 재발급하기
+        # 과거 내역 재발급 (여기에도 설정한 유효기간 적용됨)
         st.subheader("♻️ 과거에 쓴 쿠폰 다시 발급하기")
-        st.caption("예전에 썼던 쿠폰을 그대로 다시 살려냅니다.")
+        st.caption("예전에 썼던 쿠폰을 위에서 선택한 유효기간으로 다시 살려냅니다.")
         
         used_df = target_df[target_df["상태"] == "사용완료"]
         
         if used_df.empty:
             st.info("아직 사용한 쿠폰이 없어 다시 발급할 내역이 없습니다.")
         else:
-            # 중복된 이름의 쿠폰은 하나로 묶어서 보여주기
             unique_used_df = used_df.drop_duplicates(subset=["쿠폰명"]).reset_index(drop=True)
-            
             reissue_name = st.selectbox("다시 발급할 쿠폰 선택", unique_used_df["쿠폰명"].tolist())
             
             if st.button("♻️ 선택한 쿠폰 재발급", use_container_width=True, type="secondary"):
                 if active_count >= 10:
                     st.error("쿠폰함이 가득 찼습니다!")
                 else:
-                    # 혜택 내용 찾아오기
                     reissue_benefit = unique_used_df[unique_used_df["쿠폰명"] == reissue_name].iloc[0]["혜택"]
-                    expire_str = (datetime.now() + pd.DateOffset(months=1)).strftime("%Y-%m-%d")
+                    
+                    now = datetime.now()
+                    if quick_expire_option == "1개월":
+                        expire_date = now + pd.DateOffset(months=1)
+                    elif quick_expire_option == "3개월":
+                        expire_date = now + pd.DateOffset(months=3)
+                    elif quick_expire_option == "6개월":
+                        expire_date = now + pd.DateOffset(months=6)
+                    else:
+                        expire_date = pd.to_datetime(quick_custom_date)
+                        
+                    expire_str = expire_date.strftime("%Y-%m-%d")
                     
                     new_row = {
                         "쿠폰명": reissue_name,
                         "혜택": reissue_benefit,
                         "상태": "미사용",
-                        "생성일": datetime.now().strftime("%Y-%m-%d"),
+                        "생성일": now.strftime("%Y-%m-%d"),
                         "소유자": target_user,
                         "만료일": expire_str
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                     conn.update(data=df)
-                    st.success(f"'{reissue_name}' 쿠폰이 다시 발급되었습니다!")
+                    st.success(f"'{reissue_name}' 쿠폰이 다시 발급되었습니다! (만료일: {expire_str})")
                     st.rerun()
 
     # --- 탭 3: 사용 내역 및 삭제 ---
