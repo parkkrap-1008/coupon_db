@@ -40,12 +40,18 @@ def load_data():
     try:
         df = conn.read(ttl="0d")
         if df.empty or "소유자" not in df.columns:
-            return pd.DataFrame(columns=["쿠폰명", "혜택", "상태", "생성일", "소유자", "만료일"])
+            return pd.DataFrame(columns=["쿠폰명", "혜택", "상태", "생성일", "소유자", "만료일", "사용일", "메모"])
         return df.dropna(how="all")
     except:
-        return pd.DataFrame(columns=["쿠폰명", "혜택", "상태", "생성일", "소유자", "만료일"])
+        return pd.DataFrame(columns=["쿠폰명", "혜택", "상태", "생성일", "소유자", "만료일", "사용일", "메모"])
 
 df = load_data()
+
+# 💡 구글 시트에 옛날 데이터만 있어서 '사용일'과 '메모' 칸이 없더라도 에러가 나지 않게 자동 생성해주는 코드
+if "사용일" not in df.columns:
+    df["사용일"] = ""
+if "메모" not in df.columns:
+    df["메모"] = ""
 
 
 # ==========================================
@@ -109,7 +115,13 @@ elif st.session_state.page == "wallet":
 
                 with col1:
                     st.subheader(row["쿠폰명"])
-                    st.caption(f"발급일: {row['생성일']} | **만료일: {exp_date}**")
+                    
+                    # 💡 사용한 쿠폰은 만료일 대신 '사용일'을 보여줌
+                    if row["상태"] == "사용완료" and pd.notna(row.get("사용일")) and row["사용일"] != "":
+                        st.caption(f"발급일: {row['생성일']} | **사용일: {row['사용일']}**")
+                    else:
+                        st.caption(f"발급일: {row['생성일']} | **만료일: {exp_date}**")
+                        
                 with col2:
                     st.write(f"🎁 **혜택:** {row['혜택']}")
                     if row["상태"] == "미사용":
@@ -120,13 +132,32 @@ elif st.session_state.page == "wallet":
                     if row["상태"] == "미사용":
                         if st.button("사용하기", key=f"use_{index}", type="primary"):
                             df.at[index, "상태"] = "사용완료"
+                            # 💡 버튼 누른 순간의 현재 시간 저장
+                            df.at[index, "사용일"] = datetime.now().strftime("%Y-%m-%d %H:%M")
                             conn.update(data=df)
                             st.balloons() 
                             st.rerun()
                     else:
                         if st.button("되돌리기", key=f"unuse_{index}"):
                             df.at[index, "상태"] = "미사용"
+                            df.at[index, "사용일"] = "" # 되돌리면 사용일 지움
                             conn.update(data=df)
+                            st.rerun()
+                            
+                # 💡 추억 메모장 영역 추가 (아코디언 형태)
+                with st.expander("📝 추억 메모장"):
+                    memo_val = row.get("메모", "")
+                    if pd.isna(memo_val): 
+                        memo_val = ""
+                        
+                    m_col1, m_col2 = st.columns([4, 1])
+                    with m_col1:
+                        new_memo = st.text_input("메모", value=memo_val, key=f"memo_{index}", placeholder="어디서 어떻게 썼는지 기록해보세요!", label_visibility="collapsed")
+                    with m_col2:
+                        if st.button("저장", key=f"save_memo_{index}"):
+                            df.at[index, "메모"] = new_memo
+                            conn.update(data=df)
+                            st.success("저장 완료!")
                             st.rerun()
 
 
@@ -183,7 +214,9 @@ elif st.session_state.page == "admin":
                             "상태": "미사용",
                             "생성일": now.strftime("%Y-%m-%d"),
                             "소유자": target_user,
-                            "만료일": expire_str
+                            "만료일": expire_str,
+                            "사용일": "",
+                            "메모": ""
                         }
                         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                         conn.update(data=df)
@@ -231,7 +264,9 @@ elif st.session_state.page == "admin":
                         "상태": "미사용",
                         "생성일": now.strftime("%Y-%m-%d"),
                         "소유자": target_user,
-                        "만료일": expire_str
+                        "만료일": expire_str,
+                        "사용일": "",
+                        "메모": ""
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                     conn.update(data=df)
@@ -275,7 +310,9 @@ elif st.session_state.page == "admin":
                         "상태": "미사용",
                         "생성일": now.strftime("%Y-%m-%d"),
                         "소유자": target_user,
-                        "만료일": expire_str
+                        "만료일": expire_str,
+                        "사용일": "",
+                        "메모": ""
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                     conn.update(data=df)
@@ -289,7 +326,8 @@ elif st.session_state.page == "admin":
         if used_df.empty:
             st.info("아직 사용한 쿠폰이 없습니다.")
         else:
-            st.dataframe(used_df[["쿠폰명", "혜택", "생성일"]], use_container_width=True, hide_index=True)
+            # 💡 기존 정보에 더해 '사용일'과 '메모' 항목까지 표에서 한눈에 보여줍니다!
+            st.dataframe(used_df[["쿠폰명", "혜택", "생성일", "사용일", "메모"]], use_container_width=True, hide_index=True)
             
         st.divider()
         st.subheader("🗑️ 기존 쿠폰 영구 삭제")
