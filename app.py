@@ -104,7 +104,7 @@ if not st.session_state.logged_in:
                         matched_name = user_match.iloc[0]["이름"]
                         if has_cookies:
                             # 💡 모바일 브라우저가 지우지 못하도록 보안 옵션(secure, samesite)을 꽉꽉 채워 넣었습니다!
-                            controller.set("auto_login_user", matched_name, max_age=31536000, path="/", secure=True, sameSite="None")
+                           controller.set("auto_login_user", matched_name, max_age=31536000)
                             
                         st.session_state.logged_in = True
                         st.session_state.current_user = matched_name
