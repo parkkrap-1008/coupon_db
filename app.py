@@ -4,7 +4,6 @@ import pandas as pd
 from datetime import datetime
 import hashlib
 
-# 자동 로그인 마법 부품
 try:
     from streamlit_cookies_controller import CookieController
     has_cookies = True
@@ -29,7 +28,18 @@ if "page" not in st.session_state:
 if "auth_mode" not in st.session_state:
     st.session_state.auth_mode = "login"
 
-# --- 🚀 자동 로그인 확인 로직 ---
+# ==========================================
+# 💡 [핵심] 100% 무적의 마법 링크 자동 로그인 로직
+# ==========================================
+magic_user = st.query_params.get("u")
+if not st.session_state.logged_in and magic_user in ["지현", "세연"]:
+    st.session_state.logged_in = True
+    st.session_state.current_user = magic_user
+    st.session_state.page = "selection"
+    # URL 파라미터로 로그인 성공 시 다시 로딩해서 화면 띄우기
+    st.rerun()
+
+# 기존 쿠키 자동 로그인 로직 (보조 수단)
 if not st.session_state.logged_in and has_cookies:
     saved_user = controller.get("auto_login_user")
     if saved_user:
@@ -37,6 +47,7 @@ if not st.session_state.logged_in and has_cookies:
         st.session_state.current_user = saved_user
         st.session_state.page = "selection"
         st.rerun()
+
 
 # --- 구글 시트 데이터 연결 ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -66,7 +77,6 @@ def load_data():
 users_df = load_users()
 df = load_data()
 
-# 스티커 판 데이터 빈칸 방어 로직
 if "스티커" not in users_df.columns:
     users_df["스티커"] = 0
 users_df["스티커"] = pd.to_numeric(users_df["스티커"], errors='coerce').fillna(0).astype(int)
@@ -86,9 +96,6 @@ if not st.session_state.logged_in:
     st.markdown("<h1 style='text-align: center; color: #4B4B4B;'>지현 & 세연 쿠폰 보관함</h1>", unsafe_allow_html=True)
     st.write("")
     
-    if not has_cookies:
-        st.warning("💡 자동 로그인 기능을 켜시려면 깃허브 requirements.txt에 `streamlit-cookies-controller`를 꼭 추가해주세요!")
-
     if st.session_state.auth_mode == "login":
         with st.container(border=True):
             st.subheader("로그인")
@@ -103,8 +110,7 @@ if not st.session_state.logged_in:
                     if not user_match.empty:
                         matched_name = user_match.iloc[0]["이름"]
                         if has_cookies:
-                            # 💡 모바일 브라우저가 지우지 못하도록 보안 옵션(secure, samesite)을 꽉꽉 채워 넣었습니다!
-                           controller.set("auto_login_user", matched_name, max_age=31536000)
+                            controller.set("auto_login_user", matched_name, max_age=31536000)
                             
                         st.session_state.logged_in = True
                         st.session_state.current_user = matched_name
@@ -173,6 +179,8 @@ with col_right:
         st.session_state.logged_in = False
         st.session_state.current_user = None
         st.session_state.auth_mode = "login"
+        # 로그아웃 시 마법 링크 파라미터도 지워줍니다
+        st.query_params.clear()
         st.rerun()
 st.divider()
 
@@ -184,6 +192,17 @@ if st.session_state.page == "selection":
     st.title("👋 누구의 쿠폰 지갑을 열어볼까요?")
     st.write("")
     
+    # 💡 내 자동 로그인 링크 확인 안내
+    with st.expander("🔗 내 폰에 영구 자동 로그인 앱 깔기 (필수)"):
+        st.write("아래 주소를 복사해서 폰 인터넷(Safari, Chrome) 주소창에 붙여넣기 한 뒤, **'홈 화면에 추가'**를 하시면 두 번 다시 로그인이 풀리지 않습니다!")
+        
+        # 기본 스트림릿 주소가 https://my-coupon.streamlit.app 이라고 가정할 때
+        current_url = "여러분의 스트림릿 기본 주소" 
+        
+        st.code(f"?u={st.session_state.current_user}", language="text")
+        st.caption(f"👆 여러분의 원래 스트림릿 앱 주소 맨 뒤에 위 글자를 그대로 붙여서 접속하세요!\n(예시: https://abc.streamlit.app/?u={st.session_state.current_user})")
+
+    st.write("")
     col1, col2 = st.columns(2)
     with col1:
         if st.button("👦 지현 지갑 보기", use_container_width=True, type="primary"):
@@ -379,7 +398,7 @@ elif st.session_state.page == "admin":
     st.write("새로운 쿠폰을 발급하거나 내역을 관리합니다.")
     st.write("")
 
-    target_user = st.radio("누구의 쿠폰을 조작하시겠습니까?", ["지현", "세연"], horizontal=True)
+    target_user = st.radio("누구의 쿠폰 조작하시겠습니까?", ["지현", "세연"], horizontal=True)
     target_df = df[df["소유자"] == target_user]
     active_count = len(target_df[target_df["상태"] == "미사용"])
 
@@ -387,7 +406,7 @@ elif st.session_state.page == "admin":
 
     # --- 탭 1: 상세 설정 발급 ---
     with tab1:
-        st.subheader(f"{target_user}님 상세 쿠폰 만들기 (현재 남은 칸: {10 - active_count}개)")
+        st.subheader(f"{target_user}님 상세 쿠폰 만들기")
         if active_count >= 10:
             st.error("🚨 사용 가능한 쿠폰이 10개가 넘어 더 발급할 수 없습니다!")
         else:
@@ -431,13 +450,11 @@ elif st.session_state.page == "admin":
                     else:
                         st.warning("이름과 혜택을 모두 적어주세요.")
 
-    # --- 탭 2: 빠른 발급 (원클릭 + 재발급) ---
+    # --- 탭 2: 빠른 발급 ---
     with tab2:
         st.subheader("⚡ 기본 프리셋 발급")
-        st.caption("아래에서 유효기간을 먼저 선택하고 버튼을 누르세요.")
-        
         quick_expire_option = st.radio("빠른 발급 유효기간 설정", ["1개월", "3개월", "6개월", "직접 설정"], horizontal=True, key="quick_expire")
-        quick_custom_date = st.date_input("직접 설정 (위에서 '직접 설정' 선택 시 적용)", key="quick_custom")
+        quick_custom_date = st.date_input("직접 설정", key="quick_custom")
         st.write("") 
         
         presets = [
@@ -476,13 +493,11 @@ elif st.session_state.page == "admin":
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                     update_data("쿠폰", df) 
-                    st.success(f"'{p['이름']}' 쿠폰이 빠른 발급되었습니다! (만료일: {expire_str})")
+                    st.success(f"'{p['이름']}' 쿠폰이 빠른 발급되었습니다!")
                     st.rerun()
 
         st.divider()
-        
         st.subheader("♻️ 과거에 쓴 쿠폰 다시 발급하기")
-        
         used_df = target_df[target_df["상태"] == "사용완료"]
         
         if used_df.empty:
@@ -496,7 +511,6 @@ elif st.session_state.page == "admin":
                     st.error("쿠폰함이 가득 찼습니다!")
                 else:
                     reissue_benefit = unique_used_df[unique_used_df["쿠폰명"] == reissue_name].iloc[0]["혜택"]
-                    
                     now = datetime.now()
                     if quick_expire_option == "1개월":
                         expire_date = now + pd.DateOffset(months=1)
@@ -521,7 +535,7 @@ elif st.session_state.page == "admin":
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                     update_data("쿠폰", df) 
-                    st.success(f"'{reissue_name}' 쿠폰이 다시 발급되었습니다! (만료일: {expire_str})")
+                    st.success(f"'{reissue_name}' 쿠폰이 다시 발급되었습니다!")
                     st.rerun()
 
     # --- 탭 3: 사용 내역 및 삭제 ---
@@ -535,20 +549,17 @@ elif st.session_state.page == "admin":
             
         st.divider()
         st.subheader("🗑️ 기존 쿠폰 영구 삭제")
-        st.caption("삭제할 쿠폰을 여러 개 선택해서 한 번에 지울 수 있습니다.")
-        
         if target_df.empty:
             st.text("삭제할 쿠폰이 없습니다.")
         else:
             delete_options = {idx: f"{row['쿠폰명']} (상태: {row['상태']}, 발급일: {row['생성일']})" for idx, row in target_df.iterrows()}
-            
             selected_del_idxs = st.multiselect("삭제할 쿠폰들을 모두 선택하세요", options=list(delete_options.keys()), format_func=lambda x: delete_options[x])
             
             if st.button("선택한 쿠폰 일괄 삭제", type="primary"):
                 if selected_del_idxs: 
                     df = df.drop(selected_del_idxs)
                     update_data("쿠폰", df) 
-                    st.success(f"{len(selected_del_idxs)}개의 쿠폰이 깔끔하게 영구 삭제되었습니다.")
+                    st.success(f"{len(selected_del_idxs)}개의 쿠폰이 영구 삭제되었습니다.")
                     st.rerun()
                 else:
                     st.warning("삭제할 쿠폰을 먼저 선택해주세요.")
