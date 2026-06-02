@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime
 import hashlib
 
-# 💡 자동 로그인 마법 부품 (설치 안 되어있을 때 에러 방지용)
+# 자동 로그인 마법 부품
 try:
     from streamlit_cookies_controller import CookieController
     has_cookies = True
@@ -14,7 +14,6 @@ except ImportError:
 # 1. 페이지 기본 설정
 st.set_page_config(page_title="우리의 쿠폰 앱", page_icon="🎫", layout="centered")
 
-# 쿠키 컨트롤러 켜기
 if has_cookies:
     controller = CookieController()
 else:
@@ -28,7 +27,7 @@ if "current_user" not in st.session_state:
 if "page" not in st.session_state:
     st.session_state.page = "selection" 
 if "auth_mode" not in st.session_state:
-    st.session_state.auth_mode = "login" # 로그인 화면을 기본으로!
+    st.session_state.auth_mode = "login"
 
 # --- 🚀 자동 로그인 확인 로직 ---
 if not st.session_state.logged_in and has_cookies:
@@ -39,12 +38,18 @@ if not st.session_state.logged_in and has_cookies:
         st.session_state.page = "selection"
         st.rerun()
 
-# --- 구글 시트 데이터 불러오기 ---
+# --- 구글 시트 데이터 연결 ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# 💡 [핵심] 구글 시트 업데이트 + 메모리(캐시) 초기화 통합 함수
+def update_data(worksheet_name, new_data):
+    conn.update(worksheet=worksheet_name, data=new_data)
+    st.cache_data.clear() # 업데이트 후엔 무조건 기존 기억을 지워서 새로고침!
+
+# 💡 [핵심] 10분(10m) 동안 데이터를 기억해서 구글 차단 방지!
 def load_users():
     try:
-        users = conn.read(worksheet="회원", ttl="0d")
+        users = conn.read(worksheet="회원", ttl="10m") 
         if users.empty or "아이디" not in users.columns:
             return pd.DataFrame(columns=["이름", "아이디", "비밀번호"])
         return users.dropna(how="all")
@@ -53,7 +58,7 @@ def load_users():
 
 def load_data():
     try:
-        df = conn.read(worksheet="쿠폰", ttl="0d")
+        df = conn.read(worksheet="쿠폰", ttl="10m") 
         if df.empty or "소유자" not in df.columns:
             return pd.DataFrame(columns=["쿠폰명", "혜택", "상태", "생성일", "소유자", "만료일", "사용일", "메모"])
         return df.dropna(how="all")
@@ -72,7 +77,7 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 # ==========================================
-# [화면 0] 로그인 & 회원가입 화면 (완벽 분리)
+# [화면 0] 로그인 & 회원가입 화면
 # ==========================================
 if not st.session_state.logged_in:
     st.markdown("<h1 style='text-align: center; color: #4B4B4B;'>지현 & 세연 쿠폰 보관함</h1>", unsafe_allow_html=True)
@@ -81,7 +86,6 @@ if not st.session_state.logged_in:
     if not has_cookies:
         st.warning("💡 자동 로그인 기능을 켜시려면 깃허브 requirements.txt에 `streamlit-cookies-controller`를 꼭 추가해주세요!")
 
-    # --- 🔐 로그인 화면 ---
     if st.session_state.auth_mode == "login":
         with st.container(border=True):
             st.subheader("로그인")
@@ -95,26 +99,23 @@ if not st.session_state.logged_in:
                     
                     if not user_match.empty:
                         matched_name = user_match.iloc[0]["이름"]
-                        # 💡 로그인 성공 시 1년(31536000초) 동안 기기에 저장!
                         if has_cookies:
                             controller.set("auto_login_user", matched_name, max_age=31536000)
                             
                         st.session_state.logged_in = True
                         st.session_state.current_user = matched_name
-                        st.session_state.page = "selection" # 로그인 후 사람 선택 화면으로!
+                        st.session_state.page = "selection" 
                         st.rerun()
                     else:
                         st.error("아이디나 비밀번호가 틀렸습니다. 다시 확인해주세요!")
                 else:
                     st.warning("아이디와 비밀번호를 모두 입력해주세요.")
         
-        # 화면 전환 버튼
         st.write("")
         if st.button("아직 계정이 없으신가요? 📝 회원가입 하기", use_container_width=True):
             st.session_state.auth_mode = "signup"
             st.rerun()
 
-    # --- 📝 회원가입 화면 ---
     else:
         with st.container(border=True):
             st.subheader("회원가입")
@@ -137,12 +138,11 @@ if not st.session_state.logged_in:
                         new_user = {"이름": signup_name, "아이디": signup_id, "비밀번호": hashed_pw}
                         
                         users_df = pd.concat([users_df, pd.DataFrame([new_user])], ignore_index=True)
-                        conn.update(worksheet="회원", data=users_df)
+                        update_data("회원", users_df) # 💡 안전한 업데이트 적용
                         st.success("🎉 회원가입이 완료되었습니다! 아래의 로그인 버튼을 눌러주세요.")
                 else:
                     st.warning("빈칸을 모두 채워주세요.")
                     
-        # 화면 전환 버튼
         st.write("")
         if st.button("이미 계정이 있으신가요? 🔐 로그인 하기", use_container_width=True):
             st.session_state.auth_mode = "login"
@@ -165,7 +165,7 @@ with col_mid:
 with col_right:
     if st.button("🚪 로그아웃", use_container_width=True):
         if has_cookies:
-            controller.remove("auto_login_user") # 로그아웃 시 자동로그인 해제
+            controller.remove("auto_login_user") 
         st.session_state.logged_in = False
         st.session_state.current_user = None
         st.session_state.auth_mode = "login"
@@ -174,7 +174,7 @@ st.divider()
 
 
 # ==========================================
-# [화면 1] 사용자 선택 첫 화면 (다시 부활!)
+# [화면 1] 사용자 선택 첫 화면
 # ==========================================
 if st.session_state.page == "selection":
     st.title("👋 누구의 쿠폰 지갑을 열어볼까요?")
@@ -203,7 +203,7 @@ if st.session_state.page == "selection":
 
 
 # ==========================================
-# [화면 2] 개인 쿠폰 지갑 (+ 내 지갑 안에서 수정 기능 추가!)
+# [화면 2] 개인 쿠폰 지갑
 # ==========================================
 elif st.session_state.page == "wallet":
     current_user = st.session_state.selected_user
@@ -227,6 +227,7 @@ elif st.session_state.page == "wallet":
 
                 with col1:
                     st.subheader(row["쿠폰명"])
+                    
                     if row["상태"] == "사용완료" and pd.notna(row.get("사용일")) and row["사용일"] != "":
                         st.caption(f"발급일: {row['생성일']} | **사용일: {row['사용일']}**")
                     else:
@@ -243,14 +244,14 @@ elif st.session_state.page == "wallet":
                         if st.button("사용하기", key=f"use_{index}", type="primary"):
                             df.at[index, "상태"] = "사용완료"
                             df.at[index, "사용일"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-                            conn.update(worksheet="쿠폰", data=df)
+                            update_data("쿠폰", df) # 💡 안전한 업데이트 적용
                             st.balloons() 
                             st.rerun()
                     else:
                         if st.button("되돌리기", key=f"unuse_{index}"):
                             df.at[index, "상태"] = "미사용"
                             df.at[index, "사용일"] = "" 
-                            conn.update(worksheet="쿠폰", data=df)
+                            update_data("쿠폰", df) # 💡 안전한 업데이트 적용
                             st.rerun()
                             
                 with st.expander("📝 추억 메모장"):
@@ -263,11 +264,10 @@ elif st.session_state.page == "wallet":
                     with m_col2:
                         if st.button("저장", key=f"save_memo_{index}"):
                             df.at[index, "메모"] = new_memo
-                            conn.update(worksheet="쿠폰", data=df)
+                            update_data("쿠폰", df) # 💡 안전한 업데이트 적용
                             st.success("저장 완료!")
                             st.rerun()
                 
-                # 💡 내 지갑에서 바로 내용 수정하기 기능 추가 (미사용 쿠폰일 때만 나옴)
                 if row["상태"] == "미사용":
                     with st.expander("✏️ 쿠폰 수정하기"):
                         with st.form(key=f"edit_form_{index}"):
@@ -280,7 +280,7 @@ elif st.session_state.page == "wallet":
                                     df.at[index, "쿠폰명"] = edit_name
                                     df.at[index, "혜택"] = edit_benefit
                                     df.at[index, "만료일"] = edit_expire
-                                    conn.update(worksheet="쿠폰", data=df)
+                                    update_data("쿠폰", df) # 💡 안전한 업데이트 적용
                                     st.success("수정 완료!")
                                     st.rerun()
                                 else:
@@ -288,7 +288,7 @@ elif st.session_state.page == "wallet":
 
 
 # ==========================================
-# [화면 3] 통합 쿠폰 관리소 (수정 탭 제거됨)
+# [화면 3] 통합 쿠폰 관리소 
 # ==========================================
 elif st.session_state.page == "admin":
     st.title("⚙️ 전체 쿠폰 관리소")
@@ -299,7 +299,6 @@ elif st.session_state.page == "admin":
     target_df = df[df["소유자"] == target_user]
     active_count = len(target_df[target_df["상태"] == "미사용"])
 
-    # 💡 수정 탭이 지갑으로 이동했으므로 탭 3개로 복구
     tab1, tab2, tab3 = st.tabs(["➕ 상세 발급", "⚡ 빠른 발급", "📜 내역 & 삭제"])
 
     # --- 탭 1: 상세 설정 발급 ---
@@ -342,7 +341,7 @@ elif st.session_state.page == "admin":
                             "메모": ""
                         }
                         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                        conn.update(worksheet="쿠폰", data=df)
+                        update_data("쿠폰", df) # 💡 안전한 업데이트 적용
                         st.success(f"'{new_name}' 쿠폰 발급 완료! (만료일: {expire_str})")
                         st.rerun()
                     else:
@@ -392,7 +391,7 @@ elif st.session_state.page == "admin":
                         "메모": ""
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                    conn.update(worksheet="쿠폰", data=df)
+                    update_data("쿠폰", df) # 💡 안전한 업데이트 적용
                     st.success(f"'{p['이름']}' 쿠폰이 빠른 발급되었습니다! (만료일: {expire_str})")
                     st.rerun()
 
@@ -438,7 +437,7 @@ elif st.session_state.page == "admin":
                         "메모": ""
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                    conn.update(worksheet="쿠폰", data=df)
+                    update_data("쿠폰", df) # 💡 안전한 업데이트 적용
                     st.success(f"'{reissue_name}' 쿠폰이 다시 발급되었습니다! (만료일: {expire_str})")
                     st.rerun()
 
@@ -461,6 +460,6 @@ elif st.session_state.page == "admin":
             
             if st.button("선택한 쿠폰 영구 삭제", type="primary"):
                 df = df.drop(selected_del_idx)
-                conn.update(worksheet="쿠폰", data=df)
+                update_data("쿠폰", df) # 💡 안전한 업데이트 적용
                 st.success("선택한 쿠폰이 안전하게 영구 삭제되었습니다.")
                 st.rerun()
