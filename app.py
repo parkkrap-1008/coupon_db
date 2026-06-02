@@ -41,20 +41,18 @@ if not st.session_state.logged_in and has_cookies:
 # --- 구글 시트 데이터 연결 ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 💡 [핵심] 구글 시트 업데이트 + 메모리(캐시) 초기화 통합 함수
 def update_data(worksheet_name, new_data):
     conn.update(worksheet=worksheet_name, data=new_data)
-    st.cache_data.clear() # 업데이트 후엔 무조건 기존 기억을 지워서 새로고침!
+    st.cache_data.clear() 
 
-# 💡 [핵심] 10분(10m) 동안 데이터를 기억해서 구글 차단 방지!
 def load_users():
     try:
         users = conn.read(worksheet="회원", ttl="10m") 
         if users.empty or "아이디" not in users.columns:
-            return pd.DataFrame(columns=["이름", "아이디", "비밀번호"])
+            return pd.DataFrame(columns=["이름", "아이디", "비밀번호", "스티커"])
         return users.dropna(how="all")
     except:
-        return pd.DataFrame(columns=["이름", "아이디", "비밀번호"])
+        return pd.DataFrame(columns=["이름", "아이디", "비밀번호", "스티커"])
 
 def load_data():
     try:
@@ -67,6 +65,11 @@ def load_data():
 
 users_df = load_users()
 df = load_data()
+
+# 💡 스티커 판 데이터 빈칸 방어 로직
+if "스티커" not in users_df.columns:
+    users_df["스티커"] = 0
+users_df["스티커"] = pd.to_numeric(users_df["스티커"], errors='coerce').fillna(0).astype(int)
 
 if "사용일" not in df.columns:
     df["사용일"] = ""
@@ -135,10 +138,11 @@ if not st.session_state.logged_in:
                         st.error(f"이미 가입된 '{signup_name}'님의 계정이 존재합니다! 아이디를 잊으셨다면 다시 가입할 수 없습니다.")
                     else:
                         hashed_pw = hash_password(signup_pw)
-                        new_user = {"이름": signup_name, "아이디": signup_id, "비밀번호": hashed_pw}
+                        # 가입할 때 스티커 개수 0개로 세팅
+                        new_user = {"이름": signup_name, "아이디": signup_id, "비밀번호": hashed_pw, "스티커": 0}
                         
                         users_df = pd.concat([users_df, pd.DataFrame([new_user])], ignore_index=True)
-                        update_data("회원", users_df) # 💡 안전한 업데이트 적용
+                        update_data("회원", users_df) 
                         st.success("🎉 회원가입이 완료되었습니다! 아래의 로그인 버튼을 눌러주세요.")
                 else:
                     st.warning("빈칸을 모두 채워주세요.")
@@ -206,16 +210,73 @@ if st.session_state.page == "selection":
 # [화면 2] 개인 쿠폰 지갑
 # ==========================================
 elif st.session_state.page == "wallet":
-    current_user = st.session_state.selected_user
+    wallet_owner = st.session_state.selected_user
+    viewer = st.session_state.current_user
     
-    user_df = df[df["소유자"] == current_user]
+    # 💡 칭찬 스티커 판 로직
+    st.subheader(f"🌟 {wallet_owner}의 칭찬 스티커 판")
+    
+    # 스티커 개수 불러오기
+    owner_idx_list = users_df.index[users_df['이름'] == wallet_owner].tolist()
+    if owner_idx_list:
+        owner_idx = owner_idx_list[0]
+        sticker_count = users_df.at[owner_idx, "스티커"]
+    else:
+        owner_idx = None
+        sticker_count = 0
+        
+    st.write(f"현재 모은 도장: **{sticker_count} / 10 개**")
+    st.markdown(f"<h3 style='letter-spacing: 5px;'>{'💖' * sticker_count}{'🤍' * (10 - sticker_count)}</h3>", unsafe_allow_html=True)
+    
+    # 내 지갑이 아닐 때(상대방 지갑에 들어왔을 때)만 조작 가능
+    if viewer != wallet_owner and owner_idx is not None:
+        if sticker_count < 10:
+            if st.button(f"👍 {wallet_owner}에게 칭찬 도장 쾅!", use_container_width=True):
+                users_df.at[owner_idx, "스티커"] = sticker_count + 1
+                update_data("회원", users_df)
+                st.balloons()
+                st.rerun()
+        else:
+            st.success(f"🎉 짝짝짝! {wallet_owner}님이 칭찬 스티커를 다 모았습니다! 보상 쿠폰을 내려주세요!")
+            with st.form("reward_form"):
+                reward_name = st.text_input("보상 쿠폰 이름 (이름 앞에 [🌟칭찬보상]이 자동 생성됩니다)")
+                reward_benefit = st.text_input("보상 혜택")
+                if st.form_submit_button("보상 쿠폰 발급 & 스티커 판 비우기", type="primary"):
+                    if reward_name and reward_benefit:
+                        now = datetime.now()
+                        expire_str = (now + pd.DateOffset(months=3)).strftime("%Y-%m-%d") # 보상 쿠폰 기본 기한 3개월
+                        new_row = {
+                            "쿠폰명": f"[🌟칭찬보상] {reward_name}",
+                            "혜택": reward_benefit,
+                            "상태": "미사용",
+                            "생성일": now.strftime("%Y-%m-%d"),
+                            "소유자": wallet_owner,
+                            "만료일": expire_str,
+                            "사용일": "",
+                            "메모": ""
+                        }
+                        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                        update_data("쿠폰", df)
+                        
+                        # 도장 개수 0으로 초기화
+                        users_df.at[owner_idx, "스티커"] = 0
+                        update_data("회원", users_df)
+                        
+                        st.success("보상 쿠폰 발급 완료!")
+                        st.rerun()
+                    else:
+                        st.warning("이름과 혜택을 모두 입력해주세요.")
+    st.divider()
+    
+    # 쿠폰 지갑 내용 표시
+    user_df = df[df["소유자"] == wallet_owner]
     active_count = len(user_df[user_df["상태"] == "미사용"])
 
-    st.title(f"🎫 {current_user}의 쿠폰 지갑")
-    st.write(f"현재 쓸 수 있는 쿠폰: **{active_count} / 10 개**")
+    st.title(f"🎫 {wallet_owner}의 쿠폰 지갑")
+    st.write(f"현재 쓸 수 있는 쿠폰: **{active_count} / 10 개** (최대 10개)")
 
     if user_df.empty:
-        st.info("현재 지갑이 텅 비어있습니다. 관리소에서 쿠폰을 발급해보세요!")
+        st.info("현재 지갑이 텅 비어있습니다.")
     else:
         for index, row in user_df.iterrows():
             with st.container(border=True):
@@ -227,7 +288,6 @@ elif st.session_state.page == "wallet":
 
                 with col1:
                     st.subheader(row["쿠폰명"])
-                    
                     if row["상태"] == "사용완료" and pd.notna(row.get("사용일")) and row["사용일"] != "":
                         st.caption(f"발급일: {row['생성일']} | **사용일: {row['사용일']}**")
                     else:
@@ -244,14 +304,14 @@ elif st.session_state.page == "wallet":
                         if st.button("사용하기", key=f"use_{index}", type="primary"):
                             df.at[index, "상태"] = "사용완료"
                             df.at[index, "사용일"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-                            update_data("쿠폰", df) # 💡 안전한 업데이트 적용
+                            update_data("쿠폰", df) 
                             st.balloons() 
                             st.rerun()
                     else:
                         if st.button("되돌리기", key=f"unuse_{index}"):
                             df.at[index, "상태"] = "미사용"
                             df.at[index, "사용일"] = "" 
-                            update_data("쿠폰", df) # 💡 안전한 업데이트 적용
+                            update_data("쿠폰", df) 
                             st.rerun()
                             
                 with st.expander("📝 추억 메모장"):
@@ -264,7 +324,7 @@ elif st.session_state.page == "wallet":
                     with m_col2:
                         if st.button("저장", key=f"save_memo_{index}"):
                             df.at[index, "메모"] = new_memo
-                            update_data("쿠폰", df) # 💡 안전한 업데이트 적용
+                            update_data("쿠폰", df) 
                             st.success("저장 완료!")
                             st.rerun()
                 
@@ -280,7 +340,7 @@ elif st.session_state.page == "wallet":
                                     df.at[index, "쿠폰명"] = edit_name
                                     df.at[index, "혜택"] = edit_benefit
                                     df.at[index, "만료일"] = edit_expire
-                                    update_data("쿠폰", df) # 💡 안전한 업데이트 적용
+                                    update_data("쿠폰", df) 
                                     st.success("수정 완료!")
                                     st.rerun()
                                 else:
@@ -341,7 +401,7 @@ elif st.session_state.page == "admin":
                             "메모": ""
                         }
                         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                        update_data("쿠폰", df) # 💡 안전한 업데이트 적용
+                        update_data("쿠폰", df) 
                         st.success(f"'{new_name}' 쿠폰 발급 완료! (만료일: {expire_str})")
                         st.rerun()
                     else:
@@ -391,14 +451,13 @@ elif st.session_state.page == "admin":
                         "메모": ""
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                    update_data("쿠폰", df) # 💡 안전한 업데이트 적용
+                    update_data("쿠폰", df) 
                     st.success(f"'{p['이름']}' 쿠폰이 빠른 발급되었습니다! (만료일: {expire_str})")
                     st.rerun()
 
         st.divider()
         
         st.subheader("♻️ 과거에 쓴 쿠폰 다시 발급하기")
-        st.caption("예전에 썼던 쿠폰을 위에서 선택한 유효기간으로 다시 살려냅니다.")
         
         used_df = target_df[target_df["상태"] == "사용완료"]
         
@@ -437,11 +496,11 @@ elif st.session_state.page == "admin":
                         "메모": ""
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                    update_data("쿠폰", df) # 💡 안전한 업데이트 적용
+                    update_data("쿠폰", df) 
                     st.success(f"'{reissue_name}' 쿠폰이 다시 발급되었습니다! (만료일: {expire_str})")
                     st.rerun()
 
-    # --- 탭 3: 사용 내역 및 삭제 ---
+    # --- 탭 3: 사용 내역 및 삭제 (💡 일괄 삭제 기능 적용) ---
     with tab3:
         st.subheader("📜 사용 내역")
         used_df = target_df[target_df["상태"] == "사용완료"]
@@ -452,14 +511,21 @@ elif st.session_state.page == "admin":
             
         st.divider()
         st.subheader("🗑️ 기존 쿠폰 영구 삭제")
+        st.caption("삭제할 쿠폰을 여러 개 선택해서 한 번에 지울 수 있습니다.")
+        
         if target_df.empty:
             st.text("삭제할 쿠폰이 없습니다.")
         else:
             delete_options = {idx: f"{row['쿠폰명']} (상태: {row['상태']}, 발급일: {row['생성일']})" for idx, row in target_df.iterrows()}
-            selected_del_idx = st.selectbox("삭제할 쿠폰을 선택하세요", options=list(delete_options.keys()), format_func=lambda x: delete_options[x])
             
-            if st.button("선택한 쿠폰 영구 삭제", type="primary"):
-                df = df.drop(selected_del_idx)
-                update_data("쿠폰", df) # 💡 안전한 업데이트 적용
-                st.success("선택한 쿠폰이 안전하게 영구 삭제되었습니다.")
-                st.rerun()
+            # 💡 한 번에 여러 개를 체크박스처럼 선택할 수 있는 멀티셀렉트!
+            selected_del_idxs = st.multiselect("삭제할 쿠폰들을 모두 선택하세요", options=list(delete_options.keys()), format_func=lambda x: delete_options[x])
+            
+            if st.button("선택한 쿠폰 일괄 삭제", type="primary"):
+                if selected_del_idxs: # 하나라도 선택되었을 때만 실행
+                    df = df.drop(selected_del_idxs)
+                    update_data("쿠폰", df) 
+                    st.success(f"{len(selected_del_idxs)}개의 쿠폰이 깔끔하게 영구 삭제되었습니다.")
+                    st.rerun()
+                else:
+                    st.warning("삭제할 쿠폰을 먼저 선택해주세요.")
